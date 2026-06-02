@@ -1,28 +1,14 @@
 // ============================================================
-// Code.gs — Google Apps Script Web App
-// Nhận POST từ PowerShell, ghi vào Google Sheets
-//
-// Hướng dẫn triển khai:
-//   1. Mở Google Sheets → Extensions → Apps Script
-//   2. Dán toàn bộ code này vào, xóa code mặc định
-//   3. Đổi SECRET_KEY bên dưới thành chuỗi bí mật của bạn
-//   4. Deploy → New deployment → Web app
-//      - Execute as: Me
-//      - Who has access: Anyone
-//   5. Copy URL và dán vào PowerShell script
+// Code.gs — Google Apps Script Web App v2.0
 // ============================================================
 
-var SECRET_KEY = "THAY_BANG_SECRET_KEY_CUA_BAN"; // Phải khớp với $SecretKey trong PowerShell
+var SECRET_KEY = "THAY_BANG_SECRET_KEY_CUA_BAN";
 var SHEET_NAME = "Inventory";
 
-// ============================================================
-// HÀM CHÍNH — nhận POST từ PowerShell
-// ============================================================
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
 
-    // 1. Xác thực secret token
     if (data.secret !== SECRET_KEY) {
       return jsonResponse({ status: "unauthorized", message: "Sai secret key" });
     }
@@ -30,24 +16,38 @@ function doPost(e) {
     var ss    = SpreadsheetApp.getActiveSpreadsheet();
     var sheet = ss.getSheetByName(SHEET_NAME) || ss.insertSheet(SHEET_NAME);
 
-    // 2. Tạo header nếu sheet trống
     if (sheet.getLastRow() === 0) {
-      sheet.appendRow([
-        "Lần cuối cập nhật", "Asset Tag", "Serial Number", "Computer Name",
-        "Model Name", "Category", "Status", "User Đăng nhập",
-        "IP Address", "MAC Address", "CPU", "RAM (GB)", "Ổ C (GB)", "UUID"
-      ]);
-      sheet.getRange(1, 1, 1, 14)
+      var headers = [
+        // Định danh
+        "Cập nhật lần cuối", "Asset Tag", "Serial Number", "Computer Name", "Model Name",
+        "Category", "Status", "User Đăng nhập", "UUID",
+        // Mạng
+        "IP Chính", "MAC Chính", "Tất cả IP/MAC", "WiFi SSID", "Domain/Workgroup",
+        // Phần cứng
+        "CPU", "RAM (GB)", "RAM Chi tiết", "Số thanh RAM",
+        "GPU", "Màn hình", "Độ phân giải",
+        "Ổ C (GB)", "Tất cả ổ cứng", "Loại ổ cứng", "Nhiệt độ",
+        // Hệ thống
+        "Windows", "Windows Update", "Office", "Antivirus", "Phần mềm đã cài",
+        // Bảo mật
+        "BitLocker", "Firewall"
+      ];
+      sheet.appendRow(headers);
+      sheet.getRange(1, 1, 1, headers.length)
            .setFontWeight("bold")
-           .setBackground("#4A86E8")
+           .setBackground("#1a73e8")
            .setFontColor("#FFFFFF");
       sheet.setFrozenRows(1);
+
+      // Cố định độ rộng cột hợp lý
+      sheet.setColumnWidth(1, 160);  // Cập nhật lần cuối
+      sheet.setColumnWidth(9, 280);  // UUID
+      sheet.setColumnWidth(12, 300); // Tất cả IP/MAC
+      sheet.setColumnWidth(23, 350); // Tất cả ổ cứng
+      sheet.setColumnWidth(29, 400); // Phần mềm đã cài
     }
 
-    // 3. Upsert — cập nhật nếu đã có UUID, thêm mới nếu chưa có
     var result = upsertRow(sheet, data);
-
-    // 4. Ghi lịch sử thay đổi
     logHistory(ss, data, result);
 
     return jsonResponse({ status: "success", action: result });
@@ -58,23 +58,29 @@ function doPost(e) {
   }
 }
 
-// ============================================================
-// UPSERT — cập nhật nếu trùng UUID, thêm mới nếu chưa có
-// ============================================================
 function upsertRow(sheet, data) {
   var uuid   = data.uuid;
   var newRow = [
-    new Date(),    data.assetTag,  data.serial,    data.assetName,
-    data.modelName, data.category, data.status,    data.assignedTo,
-    data.ipAddress, data.macAddress, data.cpu,     data.ram,
-    data.disk,     uuid
+    // Định danh
+    new Date(),         data.assetTag,      data.serial,        data.assetName,
+    data.modelName,     data.category,      data.status,        data.assignedTo,    data.uuid,
+    // Mạng
+    data.ipAddress,     data.macAddress,    data.allNetworkInfo, data.wifiSSID,     data.domainInfo,
+    // Phần cứng
+    data.cpu,           data.ram,           data.ramDetail,     data.ramSlots,
+    data.gpu,           data.monitorInfo,   data.resolution,
+    data.disk,          data.allDisks,      data.diskTypes,     data.temperature,
+    // Hệ thống
+    data.windowsVersion, data.windowsUpdate, data.officeVersion, data.antivirus,   data.installedApps,
+    // Bảo mật
+    data.bitlocker,     data.firewall
   ];
 
-  // UUID nằm ở cột 14 (index 13)
+  // UUID ở cột 9 (index 8)
   var values = sheet.getDataRange().getValues();
   for (var i = 1; i < values.length; i++) {
-    if (values[i][13] === uuid) {
-      sheet.getRange(i + 1, 1, 1, 14).setValues([newRow]);
+    if (values[i][8] === uuid) {
+      sheet.getRange(i + 1, 1, 1, newRow.length).setValues([newRow]);
       return "updated";
     }
   }
@@ -83,36 +89,24 @@ function upsertRow(sheet, data) {
   return "inserted";
 }
 
-// ============================================================
-// LOG LỊCH SỬ — mỗi lần sync đều ghi vào sheet _history
-// ============================================================
 function logHistory(ss, data, action) {
-  var histSheet = ss.getSheetByName("_history") || ss.insertSheet("_history");
-  if (histSheet.getLastRow() === 0) {
-    histSheet.appendRow(["Thời gian", "Action", "Computer Name", "User", "IP", "UUID"]);
-    histSheet.getRange(1, 1, 1, 6).setFontWeight("bold");
+  var h = ss.getSheetByName("_history") || ss.insertSheet("_history");
+  if (h.getLastRow() === 0) {
+    h.appendRow(["Thời gian", "Action", "Computer Name", "User", "IP", "Windows", "UUID"]);
+    h.getRange(1, 1, 1, 7).setFontWeight("bold");
   }
-  histSheet.appendRow([new Date(), action, data.assetName, data.assignedTo, data.ipAddress, data.uuid]);
+  h.appendRow([new Date(), action, data.assetName, data.assignedTo, data.ipAddress, data.windowsVersion, data.uuid]);
 }
 
-// ============================================================
-// LOG LỖI — ghi lỗi vào sheet _errors để admin theo dõi
-// ============================================================
 function logError(ss, error, rawData) {
-  var errSheet = ss.getSheetByName("_errors") || ss.insertSheet("_errors");
-  if (errSheet.getLastRow() === 0) {
-    errSheet.appendRow(["Thời gian", "Lỗi", "Raw Data"]);
-    errSheet.getRange(1, 1, 1, 3)
-            .setFontWeight("bold")
-            .setBackground("#EA4335")
-            .setFontColor("#FFFFFF");
+  var e = ss.getSheetByName("_errors") || ss.insertSheet("_errors");
+  if (e.getLastRow() === 0) {
+    e.appendRow(["Thời gian", "Lỗi", "Raw Data"]);
+    e.getRange(1, 1, 1, 3).setFontWeight("bold").setBackground("#EA4335").setFontColor("#FFFFFF");
   }
-  errSheet.appendRow([new Date(), error.toString(), rawData]);
+  e.appendRow([new Date(), error.toString(), rawData]);
 }
 
-// ============================================================
-// HELPER — trả JSON response
-// ============================================================
 function jsonResponse(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
                        .setMimeType(ContentService.MimeType.JSON);
