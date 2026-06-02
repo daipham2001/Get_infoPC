@@ -20,7 +20,8 @@ function doPost(e) {
       var headers = [
         // Định danh
         "Cập nhật lần cuối", "Asset Tag", "Serial Number", "Computer Name", "Model Name",
-        "Category", "Status", "User Đăng nhập", "UUID",
+        "Category", "Status", "Họ và tên", "Mã nhân viên", "Phòng ban", "Chi nhánh",
+        "Windows User", "UUID",
         // Mạng
         "IP Chính", "MAC Chính", "Tất cả IP/MAC", "WiFi SSID", "Domain/Workgroup",
         // Phần cứng
@@ -62,24 +63,25 @@ function upsertRow(sheet, data) {
   var uuid   = data.uuid;
   var newRow = [
     // Định danh
-    new Date(),         data.assetTag,      data.serial,        data.assetName,
-    data.modelName,     data.category,      data.status,        data.assignedTo,    data.uuid,
+    new Date(),          data.assetTag,      data.serial,         data.assetName,
+    data.modelName,      data.category,      data.status,         data.assignedTo,
+    data.maNhanVien,     data.phongBan,      data.chiNhanh,       data.windowsUser,    data.uuid,
     // Mạng
-    data.ipAddress,     data.macAddress,    data.allNetworkInfo, data.wifiSSID,     data.domainInfo,
+    data.ipAddress,      data.macAddress,    data.allNetworkInfo, data.wifiSSID,       data.domainInfo,
     // Phần cứng
-    data.cpu,           data.ram,           data.ramDetail,     data.ramSlots,
-    data.gpu,           data.monitorInfo,   data.resolution,
-    data.disk,          data.allDisks,      data.diskTypes,     data.temperature,
+    data.cpu,            data.ram,           data.ramDetail,      data.ramSlots,
+    data.gpu,            data.monitorInfo,   data.resolution,
+    data.disk,           data.allDisks,      data.diskTypes,      data.temperature,
     // Hệ thống
-    data.windowsVersion, data.windowsUpdate, data.officeVersion, data.antivirus,   data.installedApps,
+    data.windowsVersion, data.windowsUpdate, data.officeVersion,  data.antivirus,      data.installedApps,
     // Bảo mật
-    data.bitlocker,     data.firewall
+    data.bitlocker,      data.firewall
   ];
 
-  // UUID ở cột 9 (index 8)
+  // UUID ở cột 13 (index 12)
   var values = sheet.getDataRange().getValues();
   for (var i = 1; i < values.length; i++) {
-    if (values[i][8] === uuid) {
+    if (values[i][12] === uuid) {
       sheet.getRange(i + 1, 1, 1, newRow.length).setValues([newRow]);
       return "updated";
     }
