@@ -1,5 +1,5 @@
 # ============================================================
-# Get-PCInfo-To-GoogleSheet.ps1 — v2.0
+# Get-PCInfo-To-GoogleSheet.ps1 — v2.1
 # Thu thập toàn diện cấu hình PC và đẩy lên Google Sheets
 #
 # Cách dùng:
@@ -16,12 +16,103 @@
 # ============================================================
 
 # ── CẤU HÌNH ─────────────────────────────────────────────────
-$GoogleWebAppUrl = if ($env:GG_WEBAPP_URL) { $env:GG_WEBAPP_URL } else { "DÁN_URL_WEB_APP_VÀO_ĐÂY" }
+$GoogleWebAppUrl = if ($env:GG_WEBAPP_URL) { $env:GG_WEBAPP_URL } else { "https://script.google.com/macros/....exec" }
 $SecretKey       = if ($env:GG_SECRET_KEY) { $env:GG_SECRET_KEY } else { "THAY_BANG_SECRET_KEY_CUA_BAN" }
 
 Write-Host "================================================" -ForegroundColor Cyan
-Write-Host " PC INVENTORY SYNC v2.0" -ForegroundColor Cyan
+Write-Host " PC INVENTORY SYNC v2.1" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor Cyan
+
+# ── FORM NHẬP THÔNG TIN NHÂN VIÊN ────────────────────────────
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+$Form                 = New-Object System.Windows.Forms.Form
+$Form.Text            = "Kiểm kê tài sản IT"
+$Form.Size            = New-Object System.Drawing.Size(420, 310)
+$Form.StartPosition   = "CenterScreen"
+$Form.FormBorderStyle = "FixedDialog"
+$Form.MaximizeBox     = $false
+$Form.MinimizeBox     = $false
+$Form.Font            = New-Object System.Drawing.Font("Segoe UI", 10)
+
+# Tiêu đề
+$LblTitle             = New-Object System.Windows.Forms.Label
+$LblTitle.Text        = "Vui lòng điền đầy đủ thông tin trước khi kiểm kê"
+$LblTitle.Location    = New-Object System.Drawing.Point(20, 15)
+$LblTitle.Size        = New-Object System.Drawing.Size(370, 20)
+$LblTitle.ForeColor   = [System.Drawing.Color]::FromArgb(30, 100, 200)
+$Form.Controls.Add($LblTitle)
+
+# Hàm tạo nhanh Label + TextBox
+function New-Field($label, $y) {
+    $lbl          = New-Object System.Windows.Forms.Label
+    $lbl.Text     = $label
+    $lbl.Location = New-Object System.Drawing.Point(20, $y)
+    $lbl.Size     = New-Object System.Drawing.Size(110, 22)
+    $Form.Controls.Add($lbl)
+
+    $txt          = New-Object System.Windows.Forms.TextBox
+    $txt.Location = New-Object System.Drawing.Point(135, ($y - 3))
+    $txt.Size     = New-Object System.Drawing.Size(255, 24)
+    $Form.Controls.Add($txt)
+    return $txt
+}
+
+$TxtMaNV    = New-Field "Mã nhân viên:"  55
+$TxtHoTen   = New-Field "Họ và tên:"     90
+$TxtPhongBan= New-Field "Phòng ban:"    125
+$TxtChiNhanh= New-Field "Chi nhánh:"    160
+
+# Nút OK
+$BtnOK          = New-Object System.Windows.Forms.Button
+$BtnOK.Text     = "Bắt đầu kiểm kê"
+$BtnOK.Location = New-Object System.Drawing.Point(135, 210)
+$BtnOK.Size     = New-Object System.Drawing.Size(150, 36)
+$BtnOK.BackColor= [System.Drawing.Color]::FromArgb(30, 100, 200)
+$BtnOK.ForeColor= [System.Drawing.Color]::White
+$BtnOK.FlatStyle= "Flat"
+$BtnOK.Add_Click({
+    if ([string]::IsNullOrWhiteSpace($TxtMaNV.Text) -or
+        [string]::IsNullOrWhiteSpace($TxtHoTen.Text) -or
+        [string]::IsNullOrWhiteSpace($TxtPhongBan.Text) -or
+        [string]::IsNullOrWhiteSpace($TxtChiNhanh.Text)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "Vui lòng điền đầy đủ tất cả các trường!",
+            "Thiếu thông tin",
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Warning
+        )
+    } else {
+        $Form.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $Form.Close()
+    }
+})
+$Form.Controls.Add($BtnOK)
+$Form.AcceptButton = $BtnOK
+
+# Nút Hủy
+$BtnCancel          = New-Object System.Windows.Forms.Button
+$BtnCancel.Text     = "Hủy"
+$BtnCancel.Location = New-Object System.Drawing.Point(295, 210)
+$BtnCancel.Size     = New-Object System.Drawing.Size(80, 36)
+$BtnCancel.FlatStyle= "Flat"
+$BtnCancel.Add_Click({ $Form.Close() })
+$Form.Controls.Add($BtnCancel)
+$Form.CancelButton = $BtnCancel
+
+# Hiện form — nếu bấm Hủy hoặc đóng X thì thoát
+$Result = $Form.ShowDialog()
+if ($Result -ne [System.Windows.Forms.DialogResult]::OK) {
+    Write-Host "Đã hủy. Thoát script." -ForegroundColor Yellow
+    exit
+}
+
+# Lưu giá trị nhập vào biến
+$MaNhanVien  = $TxtMaNV.Text.Trim()
+$HoTen       = $TxtHoTen.Text.Trim()
+$PhongBan    = $TxtPhongBan.Text.Trim()
+$ChiNhanh    = $TxtChiNhanh.Text.Trim()
 
 # ── 1. THÔNG TIN CƠ BẢN ──────────────────────────────────────
 $PCName = $env:COMPUTERNAME
@@ -267,7 +358,11 @@ $Body = @{
     modelName       = $ModelName
     category        = "Desktops"
     status          = "Deployed"
-    assignedTo      = $User
+    assignedTo      = $HoTen
+    maNhanVien      = $MaNhanVien
+    phongBan        = $PhongBan
+    chiNhanh        = $ChiNhanh
+    windowsUser     = $User
     uuid            = $UUID
     # Mạng
     ipAddress       = $PrimaryIP
