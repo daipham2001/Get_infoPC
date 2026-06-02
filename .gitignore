@@ -1,0 +1,13 @@
+# Không commit file chứa secret key
+config.ps1
+config.json
+*.env
+.env
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Editor
+.vscode/
+*.code-workspace
